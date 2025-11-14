@@ -1,8 +1,7 @@
 --!SERVER_SCRIPT
--- HudEvolution CSP server HUD
+-- HudEvolution CSP server HUD (server-streamed, draggable)
 
 -- In CSP server scripts, `ac` and `ui` are provided as globals.
--- Do NOT require 'ac' or 'ui' here.
 
 local STORAGE_SIZE = ac.storage({ group = 'ACEvoHUD', name = 'Size', value = 1 })
 local Size = STORAGE_SIZE.value
@@ -28,7 +27,14 @@ local isKmh = STORAGE_UNIT.value
 local lastClickTime = 0
 local doubleClickThreshold = 0.3
 
--- HUD drawing -------------------------------------------------------------
+-- Base radius in pixels for the HUD (scaled by Size)
+local HUD_RADIUS_BASE = 170
+-- Top-left position of the HUD window (in screen pixels)
+local hudPos = nil
+
+---------------------------------------------------------------------
+-- HUD drawing
+---------------------------------------------------------------------
 
 local function drawSpeedometer(car, center, radius, dt)
     if not car then return end
@@ -38,12 +44,10 @@ local function drawSpeedometer(car, center, radius, dt)
     if max_rpm == 0 then
         max_rpm = 8000
     end
-
     max_rpm = max_rpm * 1.05
 
     target_rpm_fill = math.clamp(my_car.rpm / max_rpm, 0, 1)
 
-    -- smooth RPM animation using dt from drawUI context
     dt = dt or 0.016
     if current_rpm_fill < target_rpm_fill then
         current_rpm_fill = math.min(current_rpm_fill + rpm_animation_speed * dt, target_rpm_fill)
@@ -63,13 +67,11 @@ local function drawSpeedometer(car, center, radius, dt)
         local end_angle = math.lerp(start_angle, math.rad(40), current_rpm_fill)
 
         local fill_color = colors.RPM_NORMAL
-
         if current_rpm_fill > 0.87 then
             fill_color = colors.RPM_WARNING
         end
         if current_rpm_fill > 0.92 then
             local blink_factor = (math.sin(blink_time) + 1) / 2
-
             fill_color = rgbm(
                 math.lerp(1, 0xd3/255, blink_factor),
                 math.lerp(0, 0x15/255, blink_factor),
@@ -498,16 +500,29 @@ local function drawSpeedometer(car, center, radius, dt)
     ui.popDWriteFont()
 end
 
--- Window + input ----------------------------------------------------------
+---------------------------------------------------------------------
+-- Window + input
+---------------------------------------------------------------------
 
-local function windowMain(dt, screenSize)
+local function windowMain(dt, winSize)
     local sim = ac.getSim()
     if not sim then return end
 
     local car = ac.getCar(sim.focusedCar)
     if not car then return end
 
-    -- Double-click anywhere on the HUD window to toggle kmh/mi
+    -- Drag the HUD by click-dragging anywhere on it
+    if ui.mouseDown(0) and ui.windowHovered() then
+        local d = ui.mouseDelta()
+        if d.x ~= 0 or d.y ~= 0 then
+            hudPos = vec2(hudPos.x + d.x, hudPos.y + d.y)
+        end
+    end
+
+    local center = vec2(winSize.x / 2, winSize.y / 2)
+    local radius = HUD_RADIUS_BASE * Size
+
+    -- Double-click anywhere on HUD to toggle km/h vs mph
     if ui.mouseClicked(0) and ui.windowHovered() then
         local currentTime = ui.time()
         if currentTime - lastClickTime < doubleClickThreshold then
@@ -519,25 +534,32 @@ local function windowMain(dt, screenSize)
         end
     end
 
-    local speedometer_center = vec2(screenSize.x / 2, screenSize.y / 2)
-    local speedometer_radius = math.min(screenSize.x, screenSize.y) * 0.4 * Size
-
-    drawSpeedometer(car, speedometer_center, speedometer_radius, dt)
+    drawSpeedometer(car, center, radius, dt)
 end
 
--- Logic-only update: NO ui.* here
+-- Logic-only update (no UI calls here)
 function script.update(dt)
-    -- keep empty for now (or put non-UI logic here)
+    -- Non-UI logic could go here if needed
 end
 
 -- UI drawing context: CSP calls this for server script UI
 function script.drawUI(dt)
-    dt = dt or (ac.getDeltaT and ac.getDeltaT() or 0.016)
+    dt = dt or 0.016
 
-    -- full-screen transparent window, no setNextWindow* needed
-    local ws = ui.windowSize()
-    ui.beginTransparentWindow('ACEvoHUD_Main', vec2(0, 0), ws)
-    windowMain(dt, ws)
+    local full = ui.windowSize()
+
+    local radius = HUD_RADIUS_BASE * Size
+    local winSize = vec2(radius * 2.4, radius * 2.4)
+
+    -- Initial position: bottom-center
+    if not hudPos then
+        hudPos = vec2(
+            full.x * 0.5 - winSize.x * 0.5,
+            full.y * 0.8 - winSize.y * 0.5
+        )
+    end
+
+    ui.beginTransparentWindow('ACEvoHUD_Main', hudPos, winSize)
+    windowMain(dt, winSize)
     ui.endWindow()
 end
-
