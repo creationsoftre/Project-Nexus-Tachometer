@@ -1,5 +1,8 @@
 --!SERVER_SCRIPT
--- HudEvolution CSP server HUD (Project Nexus style)
+-- HudEvolution CSP server HUD
+
+local ac = require 'ac'
+local ui = require 'ui'
 
 local STORAGE_SIZE = ac.storage({ group = 'ACEvoHUD', name = 'Size', value = 1 })
 local Size = STORAGE_SIZE.value
@@ -25,7 +28,6 @@ local isKmh = STORAGE_UNIT.value
 local lastClickTime = 0
 local doubleClickThreshold = 0.3
 
--- Draws the HUD for a given car
 local function drawSpeedometer(car, center, radius)
     if not car then return end
     local my_car = car
@@ -319,7 +321,7 @@ local function drawSpeedometer(car, center, radius)
     )
     ui.popDWriteFont()
 
-    -- Turn signals, lights, ABS, TC, handbrake, engine, etc.
+    -- Indicators, lights, ABS, TC, handbrake, engine, etc.
 
     image_size = radius * 0.27
     image_pos = vec2(
@@ -631,7 +633,7 @@ local function drawSpeedometer(car, center, radius)
     ui.popDWriteFont()
 end
 
--- Main window logic: input + layout
+-- Core window logic: input + layout
 local function windowMain(dt, screenSize)
     local sim = ac.getSim()
     if not sim then return end
@@ -639,7 +641,7 @@ local function windowMain(dt, screenSize)
     local car = ac.getCar(sim.focusedCar)
     if not car then return end
 
-    -- Double-click anywhere on the HUD window to toggle kmh/mi
+    -- Double-click on HUD to toggle kmh/mi
     if ui.mouseClicked(0) and ui.windowHovered() then
         local currentTime = ui.time()
         if currentTime - lastClickTime < doubleClickThreshold then
@@ -660,9 +662,18 @@ local function windowMain(dt, screenSize)
     drawSpeedometer(car, speedometer_center, speedometer_radius)
 end
 
+local function getScreenSize()
+    if ui.screenSize then
+        return ui.screenSize()
+    else
+        return ui.windowSize()
+    end
+end
+
 -- CSP server script entrypoint: called every frame
 function script.update(dt)
-    local ws = ui.windowSize()
+    local ws = getScreenSize()
+
     ui.setNextWindowPos(0, 0)
     ui.setNextWindowSize(ws.x, ws.y)
 
