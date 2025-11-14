@@ -1,9 +1,6 @@
 --!SERVER_SCRIPT
 -- HudEvolution CSP server HUD
 
-local ac = require 'ac'
-local ui = require 'ui'
-
 local STORAGE_SIZE = ac.storage({ group = 'ACEvoHUD', name = 'Size', value = 1 })
 local Size = STORAGE_SIZE.value
 
