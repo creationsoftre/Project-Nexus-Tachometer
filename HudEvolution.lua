@@ -1,5 +1,5 @@
 --!SERVER_SCRIPT
--- HudEvolution CSP server HUD (server-streamed, draggable)
+-- HudEvolution CSP server HUD (server-streamed, draggable via handle)
 
 -- In CSP server scripts, `ac` and `ui` are provided as globals.
 
@@ -31,6 +31,8 @@ local doubleClickThreshold = 0.3
 local HUD_RADIUS_BASE = 170
 -- Top-left position of the HUD window (in screen pixels)
 local hudPos = nil
+-- Are we currently dragging via the handle?
+local draggingHud = false
 
 ---------------------------------------------------------------------
 -- HUD drawing
@@ -160,14 +162,12 @@ local function drawSpeedometer(car, center, radius, dt)
         fuel_text_offset = radius * 0.24
     end
 
-    ui.pushDWriteFont('rajdhani:\\Fonts')
     ui.dwriteDrawText(
         fuel_text,
         fuel_text_size,
         vec2(fuelBarPos.x - fuel_text_offset, fuelBarPos.y - radius * 0.02),
         colors.SPEEDOMETER_WHITE
     )
-    ui.popDWriteFont()
 
     -- Center image
     local image_size = radius * 1
@@ -201,13 +201,8 @@ local function drawSpeedometer(car, center, radius, dt)
             image_pos.y + image_size * 0.43
         )
 
-        ui.pushDWriteFont('roboto:\\Fonts')
         ui.dwriteDrawText("TC ", tc_label_size, tc_label_pos, colors.SPEEDOMETER_WHITE)
-        ui.popDWriteFont()
-
-        ui.pushDWriteFont('rajdhani:\\Fonts')
         ui.dwriteDrawText(string.format("%d", my_car.tractionControlMode), tc_value_size, tc_value_pos, colors.SPEEDOMETER_WHITE)
-        ui.popDWriteFont()
     end
 
     -- ABS block
@@ -233,13 +228,8 @@ local function drawSpeedometer(car, center, radius, dt)
             image_pos.y + image_size * 0.43
         )
 
-        ui.pushDWriteFont('roboto:\\Fonts')
         ui.dwriteDrawText("ABS ", abs_label_size, abs_label_pos, colors.SPEEDOMETER_WHITE)
-        ui.popDWriteFont()
-
-        ui.pushDWriteFont('rajdhani:\\Fonts')
         ui.dwriteDrawText(string.format("%d", my_car.absMode), abs_value_size, abs_value_pos, colors.SPEEDOMETER_WHITE)
-        ui.popDWriteFont()
     end
 
     -- Brake bias block
@@ -264,13 +254,8 @@ local function drawSpeedometer(car, center, radius, dt)
         image_pos.y + image_size * 0.43
     )
 
-    ui.pushDWriteFont('roboto:\\Fonts')
     ui.dwriteDrawText("BB ", bb_text_size, bb_text_pos, colors.SPEEDOMETER_WHITE)
-    ui.popDWriteFont()
-
-    ui.pushDWriteFont('rajdhani:\\Fonts')
     ui.dwriteDrawText(string.format("%d%%", bias_value), value_text_size, value_text_pos, colors.SPEEDOMETER_WHITE)
-    ui.popDWriteFont()
 
     -- Indicator / lights / warning icons --------------------
 
@@ -371,8 +356,6 @@ local function drawSpeedometer(car, center, radius, dt)
         R   = vec2(center.x - radius * 0.31, center.y - radius * 0.69)
     }
 
-    ui.pushDWriteFont('rajdhani:\\Fonts')
-
     local gear_text, gear_pos
     if my_car.gear == 0 then
         gear_text = "N"
@@ -416,7 +399,6 @@ local function drawSpeedometer(car, center, radius, dt)
     end
 
     ui.dwriteDrawText(gear_text, text_size, gear_pos, gear_color)
-    ui.popDWriteFont()
 
     -- Distance (odometer)
     local distance_value = my_car.distanceDrivenTotalKm
@@ -452,15 +434,11 @@ local function drawSpeedometer(car, center, radius, dt)
     local speed_text_size = radius * 0.33
     local speed_pos = vec2(speed_pos_x, speed_pos_y)
 
-    ui.pushDWriteFont('Untitled1:\\Fonts')
     ui.dwriteDrawText(speed_text, speed_text_size, speed_pos, colors.SPEEDOMETER_WHITE)
-    ui.popDWriteFont()
 
     local kmh_label_size = radius * 0.09
     local kmh_label_pos = vec2(center.x - radius * 0.105, center.y - radius * 0.53)
-    ui.pushDWriteFont('roboto:\\Fonts')
     ui.dwriteDrawText(isKmh and "km/h" or "mp/h", kmh_label_size, kmh_label_pos, colors.SPEEDOMETER_WHITE)
-    ui.popDWriteFont()
 
     -- RPM numeric
     local actual_rpm = math.floor(my_car.rpm)
@@ -488,20 +466,15 @@ local function drawSpeedometer(car, center, radius, dt)
     local rpm_text_size = radius * 0.17
     local rpm_pos = vec2(center.x + radius * 0.345, rpm_pos_y)
 
-    ui.pushDWriteFont('rajdhani:\\Fonts')
     ui.dwriteDrawText(rpm_text, rpm_text_size, rpm_pos, colors.SPEEDOMETER_WHITE)
-    ui.popDWriteFont()
 
     local rpm_label_size = radius * 0.12
     local rpm_label_pos = vec2(rpm_pos.x + radius * 0.12, rpm_pos.y + radius * 0.15)
-
-    ui.pushDWriteFont('roboto:\\Fonts')
     ui.dwriteDrawText("rpm", rpm_label_size, rpm_label_pos, colors.SPEEDOMETER_WHITE)
-    ui.popDWriteFont()
 end
 
 ---------------------------------------------------------------------
--- Window + input
+-- Window + input / dragging
 ---------------------------------------------------------------------
 
 local function windowMain(dt, winSize)
@@ -511,18 +484,46 @@ local function windowMain(dt, winSize)
     local car = ac.getCar(sim.focusedCar)
     if not car then return end
 
-    -- Drag the HUD by click-dragging anywhere on it
-    if ui.mouseDown(0) and ui.windowHovered() then
+    -- Drag handle box (top-right of window)
+    local dragSize = 24
+    local dragPos = vec2(winSize.x - dragSize - 6, 6)
+    local dragMin = dragPos
+    local dragMax = vec2(dragPos.x + dragSize, dragPos.y + dragSize)
+
+    -- Draw handle (simple square with border + "≡" style lines)
+    ui.drawRectFilled(dragMin, dragMax, rgbm(0, 0, 0, 0.35))
+    ui.drawRect(dragMin, dragMax, rgbm(1, 1, 1, 0.6))
+    local line1Y = dragMin.y + dragSize * 0.35
+    local line2Y = dragMin.y + dragSize * 0.55
+    local line3Y = dragMin.y + dragSize * 0.75
+    ui.drawLine(vec2(dragMin.x + 4, line1Y), vec2(dragMax.x - 4, line1Y), rgbm(1,1,1,0.8), 1.5)
+    ui.drawLine(vec2(dragMin.x + 4, line2Y), vec2(dragMax.x - 4, line2Y), rgbm(1,1,1,0.8), 1.5)
+    ui.drawLine(vec2(dragMin.x + 4, line3Y), vec2(dragMax.x - 4, line3Y), rgbm(1,1,1,0.8), 1.5)
+
+    -- Mouse position relative to this window
+    local winPos = ui.windowPos()
+    local mp = ui.mousePos()
+    local localMouse = vec2(mp.x - winPos.x, mp.y - winPos.y)
+
+    local overDrag =
+        localMouse.x >= dragMin.x and localMouse.x <= dragMax.x and
+        localMouse.y >= dragMin.y and localMouse.y <= dragMax.y
+
+    -- Start / stop dragging based on handle
+    if overDrag and ui.mouseClicked(0) then
+        draggingHud = true
+    end
+    if not ui.mouseDown(0) then
+        draggingHud = false
+    end
+    if draggingHud and ui.mouseDown(0) then
         local d = ui.mouseDelta()
         if d.x ~= 0 or d.y ~= 0 then
             hudPos = vec2(hudPos.x + d.x, hudPos.y + d.y)
         end
     end
 
-    local center = vec2(winSize.x / 2, winSize.y / 2)
-    local radius = HUD_RADIUS_BASE * Size
-
-    -- Double-click anywhere on HUD to toggle km/h vs mph
+    -- Double-click anywhere on HUD (not just handle) to toggle kmh / mph
     if ui.mouseClicked(0) and ui.windowHovered() then
         local currentTime = ui.time()
         if currentTime - lastClickTime < doubleClickThreshold then
@@ -534,12 +535,14 @@ local function windowMain(dt, winSize)
         end
     end
 
+    local center = vec2(winSize.x / 2, winSize.y / 2)
+    local radius = HUD_RADIUS_BASE * Size
     drawSpeedometer(car, center, radius, dt)
 end
 
 -- Logic-only update (no UI calls here)
 function script.update(dt)
-    -- Non-UI logic could go here if needed
+    -- Non-UI logic can go here if needed
 end
 
 -- UI drawing context: CSP calls this for server script UI
