@@ -1,6 +1,9 @@
 --!SERVER_SCRIPT
 -- HudEvolution CSP server HUD
 
+-- In CSP server scripts, `ac` and `ui` are provided as globals.
+-- Do NOT require 'ac' or 'ui' here.
+
 local STORAGE_SIZE = ac.storage({ group = 'ACEvoHUD', name = 'Size', value = 1 })
 local Size = STORAGE_SIZE.value
 
@@ -25,7 +28,9 @@ local isKmh = STORAGE_UNIT.value
 local lastClickTime = 0
 local doubleClickThreshold = 0.3
 
-local function drawSpeedometer(car, center, radius)
+-- HUD drawing -------------------------------------------------------------
+
+local function drawSpeedometer(car, center, radius, dt)
     if not car then return end
     local my_car = car
 
@@ -38,24 +43,21 @@ local function drawSpeedometer(car, center, radius)
 
     target_rpm_fill = math.clamp(my_car.rpm / max_rpm, 0, 1)
 
+    -- smooth RPM animation using dt from drawUI context
+    dt = dt or 0.016
     if current_rpm_fill < target_rpm_fill then
-        current_rpm_fill = math.min(current_rpm_fill + rpm_animation_speed * ui.deltaTime(), target_rpm_fill)
+        current_rpm_fill = math.min(current_rpm_fill + rpm_animation_speed * dt, target_rpm_fill)
     elseif current_rpm_fill > target_rpm_fill then
-        current_rpm_fill = math.max(current_rpm_fill - rpm_animation_speed * ui.deltaTime(), target_rpm_fill)
+        current_rpm_fill = math.max(current_rpm_fill - rpm_animation_speed * dt, target_rpm_fill)
     end
 
     -- RPM background
-    local rpmBackgroundPath = function()
-        ui.pathClear()
-        ui.pathArcTo(center, radius, math.rad(-210), math.rad(30), 32)
-        ui.pathStroke(colors.SPEEDOMETER_GRAY, false, 18)
-    end
-    rpmBackgroundPath()
+    ui.pathClear()
+    ui.pathArcTo(center, radius, math.rad(-210), math.rad(30), 32)
+    ui.pathStroke(colors.SPEEDOMETER_GRAY, false, 18)
 
     -- RPM fill
-    local rpmFillPath = function()
-        if my_car.rpm < 20 then return end
-
+    if my_car.rpm >= 20 then
         ui.pathClear()
         local start_angle = math.rad(-210)
         local end_angle = math.lerp(start_angle, math.rad(40), current_rpm_fill)
@@ -79,71 +81,52 @@ local function drawSpeedometer(car, center, radius)
         ui.pathArcTo(center, radius, start_angle, end_angle, 32)
         ui.pathStroke(fill_color, false, 18)
     end
-    rpmFillPath()
 
     -- Steering indicator
-    local steeringLeftPath = function()
-        ui.pathClear()
-        ui.pathArcTo(center, radius * 0.88, math.rad(-127), math.rad(-53), 32)
-        ui.pathStroke(colors.SPEEDOMETER_DARK, false, 5)
+    ui.pathClear()
+    ui.pathArcTo(center, radius * 0.88, math.rad(-127), math.rad(-53), 32)
+    ui.pathStroke(colors.SPEEDOMETER_DARK, false, 5)
 
-        local steer_value = ac.getControllerSteerValue()
-
-        local circle_angle = math.lerp(math.rad(-127), math.rad(-53), (steer_value + 1) / 2)
-        local circle_center = vec2(
-            center.x + math.cos(circle_angle) * radius * 0.88,
-            center.y + math.sin(circle_angle) * radius * 0.88
-        )
-        local circle_radius = 5
-        ui.drawCircleFilled(circle_center, circle_radius, colors.SPEEDOMETER_WHITE)
-    end
-    steeringLeftPath()
+    local steer_value = ac.getControllerSteerValue()
+    local circle_angle = math.lerp(math.rad(-127), math.rad(-53), (steer_value + 1) / 2)
+    local circle_center = vec2(
+        center.x + math.cos(circle_angle) * radius * 0.88,
+        center.y + math.sin(circle_angle) * radius * 0.88
+    )
+    ui.drawCircleFilled(circle_center, 5, colors.SPEEDOMETER_WHITE)
 
     -- Clutch arc
-    local clutchPath = function()
+    ui.pathClear()
+    ui.pathArcTo(center, radius * 0.88, math.rad(-210), math.rad(-152), 16)
+    ui.pathStroke(colors.SPEEDOMETER_DARK, false, 5.5)
+    if my_car.clutch < 1 then
         ui.pathClear()
-        ui.pathArcTo(center, radius * 0.88, math.rad(-210), math.rad(-152), 16)
-        ui.pathStroke(colors.SPEEDOMETER_DARK, false, 5.5)
-
-        if my_car.clutch < 1 then
-            ui.pathClear()
-            local end_angle = math.lerp(math.rad(-210), math.rad(-152), 1 - my_car.clutch)
-            ui.pathArcTo(center, radius * 0.88, math.rad(-210), end_angle, 16)
-            ui.pathStroke(rgbm(0x18/255, 0xfa/255, 0xfa/255, 1), false, 5.5)
-        end
+        local end_angle = math.lerp(math.rad(-210), math.rad(-152), 1 - my_car.clutch)
+        ui.pathArcTo(center, radius * 0.88, math.rad(-210), end_angle, 16)
+        ui.pathStroke(rgbm(0x18/255, 0xfa/255, 0xfa/255, 1), false, 5.5)
     end
-    clutchPath()
 
     -- Brake arc
-    local brakePath = function()
+    ui.pathClear()
+    ui.pathArcTo(center, radius * 0.82, math.rad(-210), math.rad(-152), 16)
+    ui.pathStroke(colors.SPEEDOMETER_DARK, false, 5.5)
+    if my_car.brake > 0 then
         ui.pathClear()
-        ui.pathArcTo(center, radius * 0.82, math.rad(-210), math.rad(-152), 16)
-        ui.pathStroke(colors.SPEEDOMETER_DARK, false, 5.5)
-
-        if my_car.brake > 0 then
-            ui.pathClear()
-            local end_angle = math.lerp(math.rad(-210), math.rad(-152), my_car.brake)
-            ui.pathArcTo(center, radius * 0.82, math.rad(-210), end_angle, 16)
-            ui.pathStroke(rgbm(1, 0, 0, 1), false, 5.5)
-        end
+        local end_angle = math.lerp(math.rad(-210), math.rad(-152), my_car.brake)
+        ui.pathArcTo(center, radius * 0.82, math.rad(-210), end_angle, 16)
+        ui.pathStroke(rgbm(1, 0, 0, 1), false, 5.5)
     end
-    brakePath()
 
     -- Gas arc
-    local gasPath = function()
+    ui.pathClear()
+    ui.pathArcTo(center, radius * 0.88, math.rad(-28), math.rad(30), 16)
+    ui.pathStroke(colors.SPEEDOMETER_DARK, false, 5.5)
+    if my_car.gas > 0 then
         ui.pathClear()
-        ui.pathArcTo(center, radius * 0.88, math.rad(-28), math.rad(30), 16)
-        ui.pathStroke(colors.SPEEDOMETER_DARK, false, 5.5)
-
-        if my_car.gas > 0 then
-            ui.pathClear()
-
-            local end_angle = math.lerp(math.rad(30), math.rad(-28), my_car.gas)
-            ui.pathArcTo(center, radius * 0.88, math.rad(30), end_angle, 16)
-            ui.pathStroke(rgbm(0x39/255, 0xb5/255, 0x4a/255, 1), false, 5.5)
-        end
+        local end_angle = math.lerp(math.rad(30), math.rad(-28), my_car.gas)
+        ui.pathArcTo(center, radius * 0.88, math.rad(30), end_angle, 16)
+        ui.pathStroke(rgbm(0x39/255, 0xb5/255, 0x4a/255, 1), false, 5.5)
     end
-    gasPath()
 
     -- Fuel bar
     local fuelBarWidth = radius * 0.91
@@ -171,7 +154,6 @@ local function drawSpeedometer(car, center, radius)
     local fuel_text = string.format("%.0fL", my_car.fuel)
     local fuel_text_size = radius * 0.11
     local fuel_text_offset = radius * 0.20
-
     if my_car.fuel >= 100 then
         fuel_text_offset = radius * 0.24
     end
@@ -218,21 +200,11 @@ local function drawSpeedometer(car, center, radius)
         )
 
         ui.pushDWriteFont('roboto:\\Fonts')
-        ui.dwriteDrawText(
-            "TC ",
-            tc_label_size,
-            tc_label_pos,
-            colors.SPEEDOMETER_WHITE
-        )
+        ui.dwriteDrawText("TC ", tc_label_size, tc_label_pos, colors.SPEEDOMETER_WHITE)
         ui.popDWriteFont()
 
         ui.pushDWriteFont('rajdhani:\\Fonts')
-        ui.dwriteDrawText(
-            string.format("%d", my_car.tractionControlMode),
-            tc_value_size,
-            tc_value_pos,
-            colors.SPEEDOMETER_WHITE
-        )
+        ui.dwriteDrawText(string.format("%d", my_car.tractionControlMode), tc_value_size, tc_value_pos, colors.SPEEDOMETER_WHITE)
         ui.popDWriteFont()
     end
 
@@ -260,21 +232,11 @@ local function drawSpeedometer(car, center, radius)
         )
 
         ui.pushDWriteFont('roboto:\\Fonts')
-        ui.dwriteDrawText(
-            "ABS ",
-            abs_label_size,
-            abs_label_pos,
-            colors.SPEEDOMETER_WHITE
-        )
+        ui.dwriteDrawText("ABS ", abs_label_size, abs_label_pos, colors.SPEEDOMETER_WHITE)
         ui.popDWriteFont()
 
         ui.pushDWriteFont('rajdhani:\\Fonts')
-        ui.dwriteDrawText(
-            string.format("%d", my_car.absMode),
-            abs_value_size,
-            abs_value_pos,
-            colors.SPEEDOMETER_WHITE
-        )
+        ui.dwriteDrawText(string.format("%d", my_car.absMode), abs_value_size, abs_value_pos, colors.SPEEDOMETER_WHITE)
         ui.popDWriteFont()
     end
 
@@ -301,123 +263,81 @@ local function drawSpeedometer(car, center, radius)
     )
 
     ui.pushDWriteFont('roboto:\\Fonts')
-    ui.dwriteDrawText(
-        "BB ",
-        bb_text_size,
-        bb_text_pos,
-        colors.SPEEDOMETER_WHITE
-    )
+    ui.dwriteDrawText("BB ", bb_text_size, bb_text_pos, colors.SPEEDOMETER_WHITE)
     ui.popDWriteFont()
 
     ui.pushDWriteFont('rajdhani:\\Fonts')
-    ui.dwriteDrawText(
-        string.format("%d%%", bias_value),
-        value_text_size,
-        value_text_pos,
-        colors.SPEEDOMETER_WHITE
-    )
+    ui.dwriteDrawText(string.format("%d%%", bias_value), value_text_size, value_text_pos, colors.SPEEDOMETER_WHITE)
     ui.popDWriteFont()
 
-    -- Indicators, lights, ABS, TC, handbrake, engine, etc.
+    -- Indicator / lights / warning icons --------------------
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / 0.42,
-        center.y - radius * 0.52 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / 0.42, center.y - radius * 0.52 - image_size / 2)
     ui.setCursor(image_pos)
     ui.image('materials/002.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.8), ui.ImageFit.Fit)
-
     if my_car.turningLightsActivePhase and (my_car.turningLeftLights or my_car.hazardLights) then
         ui.setCursor(image_pos)
         ui.image('materials/002b.png', vec2(image_size, image_size), rgbm(1, 1, 1, 1), ui.ImageFit.Fit)
     end
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / -0.68,
-        center.y - radius * 0.515 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / -0.68, center.y - radius * 0.515 - image_size / 2)
     ui.setCursor(image_pos)
     ui.image('materials/003.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.8), ui.ImageFit.Fit)
-
     if my_car.turningLightsActivePhase and (my_car.turningRightLights or my_car.hazardLights) then
         ui.setCursor(image_pos)
         ui.image('materials/003b.png', vec2(image_size, image_size), rgbm(1, 1, 1, 1), ui.ImageFit.Fit)
     end
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / 0.45,
-        center.y - radius * 0.27 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / 0.45, center.y - radius * 0.27 - image_size / 2)
     ui.setCursor(image_pos)
     ui.image('materials/004.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.8), ui.ImageFit.Fit)
-
     if my_car.headlightsActive and my_car.lowBeams then
         ui.setCursor(image_pos)
         ui.image('materials/004b.png', vec2(image_size, image_size), rgbm(1, 1, 1, 1), ui.ImageFit.Fit)
     end
-
     if my_car.headlightsActive and not my_car.lowBeams then
         ui.setCursor(image_pos)
         ui.image('materials/004c.png', vec2(image_size, image_size), rgbm(1, 1, 1, 1), ui.ImageFit.Fit)
     end
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / -0.77,
-        center.y - radius * 0.25 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / -0.77, center.y - radius * 0.25 - image_size / 2)
     ui.setCursor(image_pos)
     ui.image('materials/005.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.8), ui.ImageFit.Fit)
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / 0.45,
-        center.y - radius * 0.06 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / 0.45, center.y - radius * 0.06 - image_size / 2)
     ui.setCursor(image_pos)
     ui.image('materials/006.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.8), ui.ImageFit.Fit)
-
     if my_car.absInAction then
         ui.setCursor(image_pos)
         ui.image('materials/006b.png', vec2(image_size, image_size), rgbm(1, 1, 1, 1), ui.ImageFit.Fit)
     end
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / 0.45,
-        center.y - radius * -0.17 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / 0.45, center.y - radius * -0.17 - image_size / 2)
     ui.setCursor(image_pos)
     ui.image('materials/007.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.8), ui.ImageFit.Fit)
-
     if my_car.tractionControlInAction then
         ui.setCursor(image_pos)
         ui.image('materials/007b.png', vec2(image_size, image_size), rgbm(1, 1, 1, 1), ui.ImageFit.Fit)
     end
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / 0.45,
-        center.y - radius * -0.39 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / 0.45, center.y - radius * -0.39 - image_size / 2)
     ui.setCursor(image_pos)
     ui.image('materials/008.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.8), ui.ImageFit.Fit)
-
     if my_car.handbrake > 0 then
         ui.setCursor(image_pos)
         ui.image('materials/008b.png', vec2(image_size, image_size), rgbm(1, 1, 1, 1), ui.ImageFit.Fit)
     end
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / -1.04,
-        center.y - radius * -0.35 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / -1.04, center.y - radius * -0.35 - image_size / 2)
     ui.setCursor(image_pos)
-
     if my_car.engineLifeLeft < 500 then
         ui.image('materials/009b.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.8), ui.ImageFit.Fit)
     else
@@ -425,12 +345,8 @@ local function drawSpeedometer(car, center, radius)
     end
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / -0.54,
-        center.y - radius * -0.275 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / -0.54, center.y - radius * -0.275 - image_size / 2)
     ui.setCursor(image_pos)
-
     if my_car.engineLifeLeft <= 0 then
         ui.image('materials/010b.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.8), ui.ImageFit.Fit)
     else
@@ -438,28 +354,24 @@ local function drawSpeedometer(car, center, radius)
     end
 
     image_size = radius * 0.27
-    image_pos = vec2(
-        center.x - image_size / 0.30,
-        center.y - radius * -0.99 - image_size / 2
-    )
+    image_pos = vec2(center.x - image_size / 0.30, center.y - radius * -0.99 - image_size / 2)
     ui.setCursor(image_pos)
     ui.image('materials/011.png', vec2(image_size, image_size), rgbm(1, 1, 1, 1), ui.ImageFit.Fit)
 
-    -- Gear display
+    -- Gear text
     local gear_positions = {
-        N = vec2(center.x - radius * 0.31, center.y - radius * 0.67),
-        ["1"] = vec2(center.x - radius * 0.20, center.y - radius * 0.68),
+        N   = vec2(center.x - radius * 0.31, center.y - radius * 0.67),
+        ["1"]   = vec2(center.x - radius * 0.20, center.y - radius * 0.68),
         ["2-3"] = vec2(center.x - radius * 0.25, center.y - radius * 0.68),
         ["4-6"] = vec2(center.x - radius * 0.30, center.y - radius * 0.68),
-        ["7"] = vec2(center.x - radius * 0.20, center.y - radius * 0.68),
+        ["7"]   = vec2(center.x - radius * 0.20, center.y - radius * 0.68),
         ["8-9"] = vec2(center.x - radius * 0.30, center.y - radius * 0.68),
-        R = vec2(center.x - radius * 0.31, center.y - radius * 0.69)
+        R   = vec2(center.x - radius * 0.31, center.y - radius * 0.69)
     }
 
     ui.pushDWriteFont('rajdhani:\\Fonts')
-    local gear_text
-    local gear_pos
 
+    local gear_text, gear_pos
     if my_car.gear == 0 then
         gear_text = "N"
         gear_pos = gear_positions.N
@@ -485,14 +397,12 @@ local function drawSpeedometer(car, center, radius)
 
     local text_size = radius * 1.07
     local gear_color = colors.SPEEDOMETER_WHITE
-
     if current_rpm_fill > 0.87 then
         gear_color = colors.RPM_WARNING
     end
     if current_rpm_fill > 0.92 then
-        blink_time = blink_time + ui.deltaTime() * 18
+        blink_time = blink_time + dt * 18
         local blink_factor = (math.sin(blink_time) + 1) / 2
-
         gear_color = rgbm(
             math.lerp(1, 1, blink_factor),
             math.lerp(0, 1, blink_factor),
@@ -503,12 +413,7 @@ local function drawSpeedometer(car, center, radius)
         blink_time = 0
     end
 
-    ui.dwriteDrawText(
-        gear_text,
-        text_size,
-        gear_pos,
-        gear_color
-    )
+    ui.dwriteDrawText(gear_text, text_size, gear_pos, gear_color)
     ui.popDWriteFont()
 
     -- Distance (odometer)
@@ -518,12 +423,7 @@ local function drawSpeedometer(car, center, radius)
     end
     local distance_text = string.format("%d %s", math.floor(distance_value), isKmh and "km" or "mi")
     local distance_size = radius * 0.10
-    ui.dwriteDrawText(
-        distance_text,
-        distance_size,
-        vec2(center.x - radius * 0.12, center.y - radius * -0.53),
-        colors.SPEEDOMETER_WHITE
-    )
+    ui.dwriteDrawText(distance_text, distance_size, vec2(center.x - radius * 0.12, center.y - radius * -0.53), colors.SPEEDOMETER_WHITE)
 
     -- Speed
     local speed_value = math.floor(my_car.speedKmh)
@@ -548,36 +448,19 @@ local function drawSpeedometer(car, center, radius)
     end
 
     local speed_text_size = radius * 0.33
-    local speed_pos = vec2(
-        speed_pos_x,
-        speed_pos_y
-    )
+    local speed_pos = vec2(speed_pos_x, speed_pos_y)
 
     ui.pushDWriteFont('Untitled1:\\Fonts')
-    ui.dwriteDrawText(
-        speed_text,
-        speed_text_size,
-        speed_pos,
-        colors.SPEEDOMETER_WHITE
-    )
+    ui.dwriteDrawText(speed_text, speed_text_size, speed_pos, colors.SPEEDOMETER_WHITE)
     ui.popDWriteFont()
 
     local kmh_label_size = radius * 0.09
-    local kmh_label_pos = vec2(
-        center.x - radius * 0.105,
-        center.y - radius * 0.53
-    )
-
+    local kmh_label_pos = vec2(center.x - radius * 0.105, center.y - radius * 0.53)
     ui.pushDWriteFont('roboto:\\Fonts')
-    ui.dwriteDrawText(
-        isKmh and "km/h" or "mp/h",
-        kmh_label_size,
-        kmh_label_pos,
-        colors.SPEEDOMETER_WHITE
-    )
+    ui.dwriteDrawText(isKmh and "km/h" or "mp/h", kmh_label_size, kmh_label_pos, colors.SPEEDOMETER_WHITE)
     ui.popDWriteFont()
 
-    -- RPM numeric display
+    -- RPM numeric
     local actual_rpm = math.floor(my_car.rpm)
     local main_digits = math.floor(actual_rpm / 100) * 100
     local actual_last_two = actual_rpm % 100
@@ -601,36 +484,22 @@ local function drawSpeedometer(car, center, radius)
     end
 
     local rpm_text_size = radius * 0.17
-    local rpm_pos = vec2(
-        center.x + radius * 0.345,
-        rpm_pos_y
-    )
+    local rpm_pos = vec2(center.x + radius * 0.345, rpm_pos_y)
 
     ui.pushDWriteFont('rajdhani:\\Fonts')
-    ui.dwriteDrawText(
-        rpm_text,
-        rpm_text_size,
-        rpm_pos,
-        colors.SPEEDOMETER_WHITE
-    )
+    ui.dwriteDrawText(rpm_text, rpm_text_size, rpm_pos, colors.SPEEDOMETER_WHITE)
+    ui.popDWriteFont()
 
     local rpm_label_size = radius * 0.12
-    local rpm_label_pos = vec2(
-        rpm_pos.x + radius * 0.12,
-        rpm_pos.y + radius * 0.15
-    )
+    local rpm_label_pos = vec2(rpm_pos.x + radius * 0.12, rpm_pos.y + radius * 0.15)
 
     ui.pushDWriteFont('roboto:\\Fonts')
-    ui.dwriteDrawText(
-        "rpm",
-        rpm_label_size,
-        rpm_label_pos,
-        colors.SPEEDOMETER_WHITE
-    )
+    ui.dwriteDrawText("rpm", rpm_label_size, rpm_label_pos, colors.SPEEDOMETER_WHITE)
     ui.popDWriteFont()
 end
 
--- Core window logic: input + layout
+-- Window + input ----------------------------------------------------------
+
 local function windowMain(dt, screenSize)
     local sim = ac.getSim()
     if not sim then return end
@@ -638,7 +507,7 @@ local function windowMain(dt, screenSize)
     local car = ac.getCar(sim.focusedCar)
     if not car then return end
 
-    -- Double-click on HUD to toggle kmh/mi
+    -- Double-click anywhere on the HUD window to toggle kmh/mi
     if ui.mouseClicked(0) and ui.windowHovered() then
         local currentTime = ui.time()
         if currentTime - lastClickTime < doubleClickThreshold then
@@ -650,27 +519,22 @@ local function windowMain(dt, screenSize)
         end
     end
 
-    local speedometer_center = vec2(
-        screenSize.x / 2,
-        screenSize.y / 2
-    )
+    local speedometer_center = vec2(screenSize.x / 2, screenSize.y / 2)
     local speedometer_radius = math.min(screenSize.x, screenSize.y) * 0.4 * Size
 
-    drawSpeedometer(car, speedometer_center, speedometer_radius)
+    drawSpeedometer(car, speedometer_center, speedometer_radius, dt)
 end
 
-local function getScreenSize()
-    if ui.screenSize then
-        return ui.screenSize()
-    else
-        return ui.windowSize()
-    end
-end
-
--- CSP server script entrypoint: called every frame
+-- Logic-only update: NO ui.* here
 function script.update(dt)
-    local ws = getScreenSize()
+    -- you can add non-UI logic here later if needed
+end
 
+-- UI drawing context: CSP calls this for server script UI
+function script.drawUI(dt)
+    dt = dt or (ac.getDeltaT and ac.getDeltaT() or 0.016)
+
+    local ws = ui.windowSize()
     ui.setNextWindowPos(0, 0)
     ui.setNextWindowSize(ws.x, ws.y)
 
