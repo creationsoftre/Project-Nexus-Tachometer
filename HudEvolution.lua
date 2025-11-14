@@ -527,18 +527,17 @@ end
 
 -- Logic-only update: NO ui.* here
 function script.update(dt)
-    -- you can add non-UI logic here later if needed
+    -- keep empty for now (or put non-UI logic here)
 end
 
 -- UI drawing context: CSP calls this for server script UI
 function script.drawUI(dt)
     dt = dt or (ac.getDeltaT and ac.getDeltaT() or 0.016)
 
+    -- full-screen transparent window, no setNextWindow* needed
     local ws = ui.windowSize()
-    ui.setNextWindowPos(0, 0)
-    ui.setNextWindowSize(ws.x, ws.y)
-
     ui.beginTransparentWindow('ACEvoHUD_Main', vec2(0, 0), ws)
     windowMain(dt, ws)
     ui.endWindow()
 end
+
