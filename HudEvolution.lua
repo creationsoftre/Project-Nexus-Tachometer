@@ -22,10 +22,14 @@ local frame_counter = 0
 local last_displayed_rpm = 0
 local blink_time = 0
 
-local STORAGE_UNIT = ac.storage({ group = 'ACEvoHUD', name = 'Unit', value = true })
+local STORAGE_UNIT = ac.storage({ group = 'ACEvoHUD', name = 'Unit', value = true }) -- true = km/h
 local isKmh = STORAGE_UNIT.value
 local lastClickTime = 0
 local doubleClickThreshold = 0.3
+
+-- conversion constants
+local KMH_TO_MPH = 0.621371
+local KM_TO_MI   = 0.621371
 
 -- Base radius in pixels for the HUD (scaled by Size)
 local HUD_RADIUS_BASE = 170
@@ -403,7 +407,7 @@ local function drawSpeedometer(car, center, radius, dt)
     -- Distance (odometer)
     local distance_value = my_car.distanceDrivenTotalKm
     if not isKmh then
-        distance_value = distance_value * 0.621371
+        distance_value = distance_value * KM_TO_MI
     end
     local distance_text = string.format("%d %s", math.floor(distance_value), isKmh and "km" or "mi")
     local distance_size = radius * 0.10
@@ -412,7 +416,7 @@ local function drawSpeedometer(car, center, radius, dt)
     -- Speed
     local speed_value = math.floor(my_car.speedKmh)
     if not isKmh then
-        speed_value = math.floor(speed_value * 0.621371)
+        speed_value = math.floor(speed_value * KMH_TO_MPH)
     end
 
     local speed_text
@@ -438,7 +442,7 @@ local function drawSpeedometer(car, center, radius, dt)
 
     local kmh_label_size = radius * 0.09
     local kmh_label_pos = vec2(center.x - radius * 0.105, center.y - radius * 0.53)
-    ui.dwriteDrawText(isKmh and "km/h" or "mp/h", kmh_label_size, kmh_label_pos, colors.SPEEDOMETER_WHITE)
+    ui.dwriteDrawText(isKmh and "km/h" or "mph", kmh_label_size, kmh_label_pos, colors.SPEEDOMETER_WHITE)
 
     -- RPM numeric
     local actual_rpm = math.floor(my_car.rpm)
@@ -474,7 +478,7 @@ local function drawSpeedometer(car, center, radius, dt)
 end
 
 ---------------------------------------------------------------------
--- Window + input / dragging
+-- Window + input / dragging + toggle button
 ---------------------------------------------------------------------
 
 local function windowMain(dt, winSize)
@@ -484,13 +488,21 @@ local function windowMain(dt, winSize)
     local car = ac.getCar(sim.focusedCar)
     if not car then return end
 
+    -- Toggle button for km/h <-> mph (top-left)
+    local toggleSize = vec2(60, 22)
+    local togglePos = vec2(6, 6)
+    ui.setCursor(togglePos)
+    if ui.button(isKmh and "km/h" or "mph", toggleSize) then
+        isKmh = not isKmh
+        STORAGE_UNIT.value = isKmh
+    end
+
     -- Drag handle box (top-right of window)
     local dragSize = 24
     local dragPos = vec2(winSize.x - dragSize - 6, 6)
     local dragMin = dragPos
     local dragMax = vec2(dragPos.x + dragSize, dragPos.y + dragSize)
 
-    -- Draw handle (simple square with border + "≡" style lines)
     ui.drawRectFilled(dragMin, dragMax, rgbm(0, 0, 0, 0.35))
     ui.drawRect(dragMin, dragMax, rgbm(1, 1, 1, 0.6))
     local line1Y = dragMin.y + dragSize * 0.35
@@ -523,7 +535,7 @@ local function windowMain(dt, winSize)
         end
     end
 
-    -- Double-click anywhere on HUD (not just handle) to toggle kmh / mph
+    -- (Optional) Double-click anywhere to toggle unit as well
     if ui.mouseClicked(0) and ui.windowHovered() then
         local currentTime = ui.time()
         if currentTime - lastClickTime < doubleClickThreshold then
@@ -554,15 +566,15 @@ function script.drawUI(dt)
     local radius = HUD_RADIUS_BASE * Size
     local winSize = vec2(radius * 2.4, radius * 2.4)
 
-    -- Initial position: bottom-center
+    -- Initial position: bottom-right
     if not hudPos then
         hudPos = vec2(
-            full.x * 0.5 - winSize.x * 0.5,
-            full.y * 0.8 - winSize.y * 0.5
+            full.x - winSize.x - 20,
+            full.y - winSize.y - 20
         )
     end
 
     ui.beginTransparentWindow('ACEvoHUD_Main', hudPos, winSize)
     windowMain(dt, winSize)
-    ui.endWindow()
+    ui.endTransparentWindow()
 end
