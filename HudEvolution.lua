@@ -7,23 +7,25 @@ local STORAGE_SIZE = ac.storage({ group = 'ACEvoHUD', name = 'Size', value = 1 }
 local Size = STORAGE_SIZE.value
 
 local colors = {
-    SPEEDOMETER_GRAY = rgbm(0x2d/255, 0x2d/255, 0x2d/255, 1),
-    SPEEDOMETER_DARK = rgbm(0x66/255, 0x65/255, 0x65/255, 1),
+    SPEEDOMETER_GRAY  = rgbm(0x2d/255, 0x2d/255, 0x2d/255, 1),
+    SPEEDOMETER_DARK  = rgbm(0x66/255, 0x65/255, 0x65/255, 1),
     SPEEDOMETER_WHITE = rgbm(1, 1, 1, 1),
-    RPM_NORMAL = rgbm(1, 1, 254/255, 1),
-    RPM_WARNING = rgbm(1, 1, 0, 1),
-    RPM_DANGER = rgbm(1, 0, 0, 1),
+    RPM_NORMAL        = rgbm(1, 1, 254/255, 1),
+    RPM_WARNING       = rgbm(1, 1, 0, 1),
+    RPM_DANGER        = rgbm(1, 0, 0, 1),
 }
 
 local current_rpm_fill = 0
-local target_rpm_fill = 0
+local target_rpm_fill  = 0
 local rpm_animation_speed = 3.0
 local frame_counter = 0
 local last_displayed_rpm = 0
 local blink_time = 0
 
-local STORAGE_UNIT = ac.storage({ group = 'ACEvoHUD', name = 'Unit', value = true }) -- true = km/h
-local isKmh = STORAGE_UNIT.value
+-- true = km/h, false = mph
+local STORAGE_UNIT = ac.storage({ group = 'ACEvoHUD', name = 'Unit', value = true })
+local isKmh = STORAGE_UNIT.value and true or false
+
 local lastClickTime = 0
 local doubleClickThreshold = 0.3
 
@@ -47,9 +49,7 @@ local function drawSpeedometer(car, center, radius, dt)
     local my_car = car
 
     local max_rpm = my_car.rpmLimiter
-    if max_rpm == 0 then
-        max_rpm = 8000
-    end
+    if max_rpm == 0 then max_rpm = 8000 end
     max_rpm = max_rpm * 1.05
 
     target_rpm_fill = math.clamp(my_car.rpm / max_rpm, 0, 1)
@@ -70,7 +70,7 @@ local function drawSpeedometer(car, center, radius, dt)
     if my_car.rpm >= 20 then
         ui.pathClear()
         local start_angle = math.rad(-210)
-        local end_angle = math.lerp(start_angle, math.rad(40), current_rpm_fill)
+        local end_angle   = math.lerp(start_angle, math.rad(40), current_rpm_fill)
 
         local fill_color = colors.RPM_NORMAL
         if current_rpm_fill > 0.87 then
@@ -79,9 +79,9 @@ local function drawSpeedometer(car, center, radius, dt)
         if current_rpm_fill > 0.92 then
             local blink_factor = (math.sin(blink_time) + 1) / 2
             fill_color = rgbm(
-                math.lerp(1, 0xd3/255, blink_factor),
-                math.lerp(0, 0x15/255, blink_factor),
-                math.lerp(0, 0x14/255, blink_factor),
+                math.lerp(1,   0xd3/255, blink_factor),
+                math.lerp(0,   0x15/255, blink_factor),
+                math.lerp(0,   0x14/255, blink_factor),
                 1
             )
         end
@@ -95,7 +95,7 @@ local function drawSpeedometer(car, center, radius, dt)
     ui.pathArcTo(center, radius * 0.88, math.rad(-127), math.rad(-53), 32)
     ui.pathStroke(colors.SPEEDOMETER_DARK, false, 5)
 
-    local steer_value = ac.getControllerSteerValue()
+    local steer_value  = ac.getControllerSteerValue()
     local circle_angle = math.lerp(math.rad(-127), math.rad(-53), (steer_value + 1) / 2)
     local circle_center = vec2(
         center.x + math.cos(circle_angle) * radius * 0.88,
@@ -137,7 +137,7 @@ local function drawSpeedometer(car, center, radius, dt)
     end
 
     -- Fuel bar
-    local fuelBarWidth = radius * 0.91
+    local fuelBarWidth  = radius * 0.91
     local fuelBarHeight = radius * 0.09
     local fuelBarPos = vec2(
         center.x - fuelBarWidth / 2.1,
@@ -160,7 +160,7 @@ local function drawSpeedometer(car, center, radius, dt)
     )
 
     local fuel_text = string.format("%.0fL", my_car.fuel)
-    local fuel_text_size = radius * 0.11
+    local fuel_text_size   = radius * 0.11
     local fuel_text_offset = radius * 0.20
     if my_car.fuel >= 100 then
         fuel_text_offset = radius * 0.24
@@ -245,8 +245,8 @@ local function drawSpeedometer(car, center, radius, dt)
     ui.setCursor(image_pos)
     ui.image('materials/012.png', vec2(image_size, image_size), rgbm(1, 1, 1, 0.6), ui.ImageFit.Fit)
 
-    local bias_value = math.floor(my_car.brakeBias * 100)
-    local bb_text_size = radius * 0.095
+    local bias_value    = math.floor(my_car.brakeBias * 100)
+    local bb_text_size  = radius * 0.095
     local value_text_size = radius * 0.11
 
     local bb_text_pos = vec2(
@@ -351,40 +351,40 @@ local function drawSpeedometer(car, center, radius, dt)
 
     -- Gear text
     local gear_positions = {
-        N   = vec2(center.x - radius * 0.31, center.y - radius * 0.67),
-        ["1"]   = vec2(center.x - radius * 0.20, center.y - radius * 0.68),
+        N     = vec2(center.x - radius * 0.31, center.y - radius * 0.67),
+        ["1"] = vec2(center.x - radius * 0.20, center.y - radius * 0.68),
         ["2-3"] = vec2(center.x - radius * 0.25, center.y - radius * 0.68),
         ["4-6"] = vec2(center.x - radius * 0.30, center.y - radius * 0.68),
-        ["7"]   = vec2(center.x - radius * 0.20, center.y - radius * 0.68),
+        ["7"] = vec2(center.x - radius * 0.20, center.y - radius * 0.68),
         ["8-9"] = vec2(center.x - radius * 0.30, center.y - radius * 0.68),
-        R   = vec2(center.x - radius * 0.31, center.y - radius * 0.69)
+        R     = vec2(center.x - radius * 0.31, center.y - radius * 0.69)
     }
 
     local gear_text, gear_pos
     if my_car.gear == 0 then
         gear_text = "N"
-        gear_pos = gear_positions.N
+        gear_pos  = gear_positions.N
     elseif my_car.gear == -1 then
         gear_text = "R"
-        gear_pos = gear_positions.R
+        gear_pos  = gear_positions.R
     elseif my_car.gear == 1 then
         gear_text = "1"
-        gear_pos = gear_positions["1"]
+        gear_pos  = gear_positions["1"]
     elseif my_car.gear >= 2 and my_car.gear <= 3 then
         gear_text = tostring(my_car.gear)
-        gear_pos = gear_positions["2-3"]
+        gear_pos  = gear_positions["2-3"]
     elseif my_car.gear >= 4 and my_car.gear <= 6 then
         gear_text = tostring(my_car.gear)
-        gear_pos = gear_positions["4-6"]
+        gear_pos  = gear_positions["4-6"]
     elseif my_car.gear == 7 then
         gear_text = "7"
-        gear_pos = gear_positions["7"]
+        gear_pos  = gear_positions["7"]
     else
         gear_text = tostring(my_car.gear)
-        gear_pos = gear_positions["8-9"]
+        gear_pos  = gear_positions["8-9"]
     end
 
-    local text_size = radius * 1.07
+    local text_size  = radius * 1.07
     local gear_color = colors.SPEEDOMETER_WHITE
     if current_rpm_fill > 0.87 then
         gear_color = colors.RPM_WARNING
@@ -393,9 +393,9 @@ local function drawSpeedometer(car, center, radius, dt)
         blink_time = blink_time + dt * 18
         local blink_factor = (math.sin(blink_time) + 1) / 2
         gear_color = rgbm(
-            math.lerp(1, 1, blink_factor),
-            math.lerp(0, 1, blink_factor),
-            math.lerp(0, 1, blink_factor),
+            math.lerp(1,   1, blink_factor),
+            math.lerp(0,   1, blink_factor),
+            math.lerp(0,   1, blink_factor),
             1
         )
     else
@@ -436,17 +436,17 @@ local function drawSpeedometer(car, center, radius, dt)
     end
 
     local speed_text_size = radius * 0.33
-    local speed_pos = vec2(speed_pos_x, speed_pos_y)
+    local speed_pos        = vec2(speed_pos_x, speed_pos_y)
 
     ui.dwriteDrawText(speed_text, speed_text_size, speed_pos, colors.SPEEDOMETER_WHITE)
 
     local kmh_label_size = radius * 0.09
-    local kmh_label_pos = vec2(center.x - radius * 0.105, center.y - radius * 0.53)
+    local kmh_label_pos  = vec2(center.x - radius * 0.105, center.y - radius * 0.53)
     ui.dwriteDrawText(isKmh and "km/h" or "mph", kmh_label_size, kmh_label_pos, colors.SPEEDOMETER_WHITE)
 
     -- RPM numeric
-    local actual_rpm = math.floor(my_car.rpm)
-    local main_digits = math.floor(actual_rpm / 100) * 100
+    local actual_rpm      = math.floor(my_car.rpm)
+    local main_digits     = math.floor(actual_rpm / 100) * 100
     local actual_last_two = actual_rpm % 100
 
     frame_counter = frame_counter + 1
@@ -468,17 +468,17 @@ local function drawSpeedometer(car, center, radius, dt)
     end
 
     local rpm_text_size = radius * 0.17
-    local rpm_pos = vec2(center.x + radius * 0.345, rpm_pos_y)
+    local rpm_pos       = vec2(center.x + radius * 0.345, rpm_pos_y)
 
     ui.dwriteDrawText(rpm_text, rpm_text_size, rpm_pos, colors.SPEEDOMETER_WHITE)
 
     local rpm_label_size = radius * 0.12
-    local rpm_label_pos = vec2(rpm_pos.x + radius * 0.12, rpm_pos.y + radius * 0.15)
+    local rpm_label_pos  = vec2(rpm_pos.x + radius * 0.12, rpm_pos.y + radius * 0.15)
     ui.dwriteDrawText("rpm", rpm_label_size, rpm_label_pos, colors.SPEEDOMETER_WHITE)
 end
 
 ---------------------------------------------------------------------
--- Window + input / dragging + toggle button
+-- Window + input / dragging + colored toggle button
 ---------------------------------------------------------------------
 
 local function windowMain(dt, winSize)
@@ -488,20 +488,35 @@ local function windowMain(dt, winSize)
     local car = ac.getCar(sim.focusedCar)
     if not car then return end
 
-    -- Toggle button for km/h <-> mph (top-left)
+    ------------------------------------------------------------------
+    -- Unit toggle button (top-left)
+    ------------------------------------------------------------------
     local toggleSize = vec2(60, 22)
-    local togglePos = vec2(6, 6)
+    local togglePos  = vec2(6, 6)
     ui.setCursor(togglePos)
-    if ui.button(isKmh and "km/h" or "mph", toggleSize) then
+
+    -- Color: green = km/h, blue = mph
+    local bgColor = isKmh and rgbm(0, 0.55, 0.15, 0.9) or rgbm(0, 0.35, 0.9, 0.9)
+    ui.drawRectFilled(togglePos, vec2(togglePos.x + toggleSize.x, togglePos.y + toggleSize.y), bgColor)
+    ui.drawRect(togglePos, vec2(togglePos.x + toggleSize.x, togglePos.y + toggleSize.y), rgbm(1,1,1,0.9))
+
+    -- Click zone for toggle
+    if ui.invisibleButton("unit_toggle", toggleSize) then
         isKmh = not isKmh
         STORAGE_UNIT.value = isKmh
     end
 
-    -- Drag handle box (top-right of window)
+    local label = isKmh and "km/h" or "mph"
+    ui.setCursor(vec2(togglePos.x + 8, togglePos.y + 3))
+    ui.dwriteDrawText(label, 14, ui.getCursor(), colors.SPEEDOMETER_WHITE)
+
+    ------------------------------------------------------------------
+    -- Drag handle (top-right)
+    ------------------------------------------------------------------
     local dragSize = 24
-    local dragPos = vec2(winSize.x - dragSize - 6, 6)
-    local dragMin = dragPos
-    local dragMax = vec2(dragPos.x + dragSize, dragPos.y + dragSize)
+    local dragPos  = vec2(winSize.x - dragSize - 6, 6)
+    local dragMin  = dragPos
+    local dragMax  = vec2(dragPos.x + dragSize, dragPos.y + dragSize)
 
     ui.drawRectFilled(dragMin, dragMax, rgbm(0, 0, 0, 0.35))
     ui.drawRect(dragMin, dragMax, rgbm(1, 1, 1, 0.6))
@@ -513,8 +528,8 @@ local function windowMain(dt, winSize)
     ui.drawLine(vec2(dragMin.x + 4, line3Y), vec2(dragMax.x - 4, line3Y), rgbm(1,1,1,0.8), 1.5)
 
     -- Mouse position relative to this window
-    local winPos = ui.windowPos()
-    local mp = ui.mousePos()
+    local winPos     = ui.windowPos()
+    local mp         = ui.mousePos()
     local localMouse = vec2(mp.x - winPos.x, mp.y - winPos.y)
 
     local overDrag =
@@ -535,7 +550,9 @@ local function windowMain(dt, winSize)
         end
     end
 
-    -- (Optional) Double-click anywhere to toggle unit as well
+    ------------------------------------------------------------------
+    -- Optional: double-click anywhere on HUD also toggles unit
+    ------------------------------------------------------------------
     if ui.mouseClicked(0) and ui.windowHovered() then
         local currentTime = ui.time()
         if currentTime - lastClickTime < doubleClickThreshold then
@@ -547,6 +564,9 @@ local function windowMain(dt, winSize)
         end
     end
 
+    ------------------------------------------------------------------
+    -- Draw main speedometer
+    ------------------------------------------------------------------
     local center = vec2(winSize.x / 2, winSize.y / 2)
     local radius = HUD_RADIUS_BASE * Size
     drawSpeedometer(car, center, radius, dt)
@@ -563,7 +583,7 @@ function script.drawUI(dt)
 
     local full = ui.windowSize()
 
-    local radius = HUD_RADIUS_BASE * Size
+    local radius  = HUD_RADIUS_BASE * Size
     local winSize = vec2(radius * 2.4, radius * 2.4)
 
     -- Initial position: bottom-right
